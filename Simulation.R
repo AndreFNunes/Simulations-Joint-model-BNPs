@@ -1,4 +1,5 @@
 library(nimble, warn.conflicts = FALSE)
+library(dplyr, warn.conflicts = FALSE)
 
 set.seed(20)
 
