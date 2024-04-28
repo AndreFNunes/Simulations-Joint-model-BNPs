@@ -18,7 +18,7 @@ simCode <- nimbleCode({
     xi[i] ~ dcat(w[1:L])
     
     for (j in 1:nvisit) {
-      logit(prob[i,j]) <- beta0 + inprod(beta1[1:p], x[i, 1:p]) + b[i]# True occupancy status
+      logit(prob[i,j]) <- beta01 + inprod(beta1[1:p], x[i, 1:p]) + b[i]# True occupancy status
       logit(prob2[i,j]) <- beta02 + inprod(beta2[1:p], x[i, 1:p]) + b[i]# True occupancy status
       
       y1[i,j] ~ dbern(prob[i,j]) # Observed data
@@ -36,7 +36,7 @@ simCode <- nimbleCode({
     mu_beta[i,3] <- muTilde_beta3[xi[i]]   
   }
   
-  beta0 ~ dnorm(0, sd = 1)
+  beta01 ~ dnorm(0, sd = 1)
   beta02 ~ dnorm(0, sd = 1)
   for(k in 1:p) {
     beta1[k] ~ dnorm(0, sd = 2)
@@ -88,7 +88,7 @@ simModel <- nimbleModel(code = simCode,
                         constants = list(nsite = 120, nvisit = 21, p = p, L = L,
                                          a0 = 2, b0 = 0.2, mu0 = 0, var0 = 25,
                                          x = X), 
-                        inits = list(beta0 = 1, beta1 = rnorm(p, 0, 1),
+                        inits = list(beta01 = 1, beta1 = rnorm(p, 0, 1),
                                      beta02 = -1, beta2 = rnorm(p, 0, 1),
                                      alpha = 1, muTilde = rnorm(L, 0, 4), 
                                      muTilde_beta1 = rnorm(L, 0, 1),
@@ -151,7 +151,7 @@ samples2 <- runMCMC(CsimMCMC, niter = 13000, nburnin = 5000, thin = 50, summary 
 
 par(mfrow=c(2,4))
 
-plot(samples2$samples[ , 'beta0'], type = 'l', xlab = 'iteration',  ylab = expression(beta01))
+plot(samples2$samples[ , 'beta01'], type = 'l', xlab = 'iteration',  ylab = expression(beta01))
 plot(samples2$samples[ , 'beta1[1]'], type = 'l', xlab = 'iteration', ylab = expression(beta11))
 plot(samples2$samples[ , 'beta1[2]'], type = 'l', xlab = 'iteration', ylab = expression(beta21))
 plot(samples2$samples[ , 'beta1[3]'], type = 'l', xlab = 'iteration', ylab = expression(beta31))
@@ -184,7 +184,7 @@ par(mfcol=c(1, 1))
 { #mu_b
   mu_bCols <- samples2$samples[, mu_list]
   mu_bMn <- colMeans(mu_bCols)
-  hist(bMn[1:30], xlab = 'posterior means 23', main = 'mu_b0', probability = FALSE, breaks = 100, col='blue', 
+  hist(bMn[1:30], xlab = 'Posterior Means', main = 'mu_b0', probability = FALSE, breaks = 100, col='blue', 
        xlim = c(-6,6), ylim = c(0,30), density = 5, angle = 0, border = 'blue')
   hist(bMn[31:60], col='red', xlim = c(-5,5), ylim = c(0,30), add = TRUE, breaks = 100, density = 5, angle = 30, border = 'red')
   hist(bMn[61:90], col='orange', xlim = c(-5,5), ylim = c(0,30), add = TRUE, breaks = 100, density = 5, angle = 60, border = 'orange')
@@ -192,17 +192,17 @@ par(mfcol=c(1, 1))
 
   mu_bCols <- samples2$samples[, mu_beta_list[31:60]]
   mu_bMn <- colMeans(mu_bCols)
-  hist(mu_bMn, xlab = 'posterior means 23', main = 'mu_b2', probability = FALSE, breaks = 20, col='blue', 
+  hist(mu_bMn, xlab = 'Posterior Means', main = 'mu_b2', probability = FALSE, breaks = 20, col='blue', 
        xlim = c(-6,6), ylim = c(0,30), density = 5, angle = 0, border = 'blue')
 
   mu_bCols <- samples2$samples[, mu_beta_list[181:210]]
   mu_bMn <- colMeans(mu_bCols)
-  hist(mu_bMn, xlab = 'posterior means 23', main = 'mu_b3', probability = FALSE, breaks = 20, col='blue', 
+  hist(mu_bMn, xlab = 'Posterior Means', main = 'mu_b3', probability = FALSE, breaks = 20, col='blue', 
        xlim = c(-6,6), ylim = c(0,30), density = 5, angle = 0, border = 'blue')
 
   mu_bCols <- samples2$samples[, mu_beta_list[331:360]]
   mu_bMn <- colMeans(mu_bCols)
-  hist(mu_bMn, xlab = 'posterior means 23', main = 'mu_b4', probability = FALSE, breaks = 20, col='blue', 
+  hist(mu_bMn, xlab = 'Posterior Means', main = 'mu_b4', probability = FALSE, breaks = 20, col='blue', 
        xlim = c(-6,6), ylim = c(0,30), density = 5, angle = 0, border = 'blue')
 }##############################################################################################
 
@@ -211,7 +211,7 @@ par(mfcol=c(1, 1))
   bCols <- samples2$samples[, b_list]
   bMn <- colMeans(bCols)
   
-  hist(bMn[1:30], xlab = 'posterior means 23', main = 'b', probability = FALSE, breaks = 100, col='blue', 
+  hist(bMn[1:30], xlab = 'Posterior Means', main = 'b', probability = FALSE, breaks = 100, col='blue', 
        xlim = c(-2, 5), ylim = c(0,15), density = 5, angle = 0, border = 'blue') 
   hist(bMn[31:60], col='red', xlim = c(-5,5), ylim = c(0,30), add = TRUE, breaks = 100, density = 5, angle = 30, border = 'red')
   hist(bMn[61:90], col='orange', xlim = c(-5,5), ylim = c(0,30), add = TRUE, breaks = 100, density = 5, angle = 60, border = 'orange')
@@ -223,14 +223,14 @@ par(mfcol=c(1, 1))
     tau2_bCols <- samples2$samples[, tau2_b_list]
     tau2_bMn <- colMeans(tau2_bCols)
     
-    hist(tau2_bMn[1:30], xlab = 'posterior means 23', main = 'tau2_b', probability = FALSE, breaks = 100, col='blue', 
+    hist(tau2_bMn[1:30], xlab = 'Posterior Means', main = 'tau2_b', probability = FALSE, breaks = 100, col='blue', 
          xlim = c(0,1), density = 5, angle = 0, border = 'blue')
     hist(tau2_bMn[31:60], col='red', xlim = c(0,5), add = TRUE, breaks = 100, density = 5, angle = 30, border = 'red')
     hist(tau2_bMn[61:90], col='orange', xlim = c(0,5), add = TRUE, breaks = 100, density = 5, angle = 60, border = 'orange')
     hist(tau2_bMn[91:120], col='green', xlim = c(0,5), add = TRUE, breaks = 100, density = 5, angle = 60, border = 'green')
 
   }##############################################################################################
-  hist(B[1:30], xlab = 'posterior means 23', main = 'B', probability = FALSE, breaks = 100, col='blue', 
+  hist(B[1:30], xlab = 'Posterior Means', main = 'B', probability = FALSE, breaks = 100, col='blue', 
        xlim = c(-6,6), ylim = c(0,30), density = 5, angle = 0, border = 'blue')
   hist(B[31:60], col='red', xlim = c(-5,5), ylim = c(0,30), add = TRUE, breaks = 100, density = 5, angle = 30, border = 'red')
   hist(B[61:90], col='orange', xlim = c(-5,5), ylim = c(0,30), add = TRUE, breaks = 100, density = 5, angle = 60, border = 'orange')
@@ -239,7 +239,7 @@ par(mfcol=c(1, 1))
   hist(samples2$samples[, "alpha"])
 }
 
-samples2$summary['beta0',]
+samples2$summary['beta01',]
 samples2$summary['beta1[1]',]
 samples2$summary['beta1[2]',]
 samples2$summary['beta1[3]',]
