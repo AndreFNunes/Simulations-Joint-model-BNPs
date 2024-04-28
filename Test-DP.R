@@ -1,24 +1,35 @@
+####################################
+###### START OF MODEL FITTING ######
+
+library(nimble, warn.conflicts = FALSE)
+library(dplyr, warn.conflicts = FALSE)
+
+##################################################################################
+###########
+#           TESTE 1 REFERÊNCIA COM BNP's
+###########
+##################################################################################
 
 simCode <- nimbleCode({
   for (i in 1:nsite) {
-    gamma[i] ~ dnorm(mu[i], var = tau2[i])  # random effects from mixture dist.
+    b[i] ~ dnorm(mu[i], var = tau2[i])  # random effects from mixture dist.
     mu[i] <- muTilde[xi[i]]                 # mean for random effect from cluster xi[i]
     tau2[i] <- tau2Tilde[xi[i]]             # var for random effect from cluster xi[i] 
     xi[i] ~ dcat(w[1:L])
     
     for (j in 1:nvisit) {
-      logit(prob[i,j]) <- beta0 + inprod(beta[1:p], x[i, 1:p]) + gamma[i]# True occupancy status
-      logit(prob2[i,j]) <- beta02 + inprod(beta2[1:p], x[i, 1:p]) + gamma[i]# True occupancy status
+      logit(prob[i,j]) <- beta01 + inprod(beta1[1:p], x[i, 1:p]) + b[i]# True occupancy status
+      logit(prob2[i,j]) <- beta02 + inprod(beta2[1:p], x[i, 1:p]) + b[i]# True occupancy status
       
       y1[i,j] ~ dbern(prob[i,j]) # Observed data
       y2[i,j] ~ dbern(prob2[i,j]) # Observed data
     }
   }
   
-  beta0 ~ dnorm(0, sd = 1)
+  beta01 ~ dnorm(0, sd = 1)
   beta02 ~ dnorm(0, sd = 1)
   for(k in 1:p) {
-    beta[k] ~ dnorm(0, sd = 2)
+    beta1[k] ~ dnorm(0, sd = 2)
     beta2[k] ~ dnorm(0, sd = 2)
   }
   # mixture component parameters drawn from base measures
@@ -36,24 +47,33 @@ simCode <- nimbleCode({
   w[1:L] <- stick_breaking(v[1:(L-1)])
 })
 
+### NUMBER OF COVARIATES
+
 p <- 3
+
+### NUMBER OF COMPONENTS IN MIXTURE OF DP (DIRICHLET PROCESS)
+
 L <- 30
+
+###### BUILDING MODEL FOR DATA FITTING ######
+###
+### "npatients" = number of patients; "nvisit" = number of longitudinal measures
+### "b" = shared random effect; "x" = Covariate matrix
 
 simModel <- nimbleModel(code = simCode,
                         constants = list(nsite = 120, nvisit = 21, p = p, L = L,
                                          a0 = 2, b0 = 0.2, mu0 = 0, var0 = 25,
                                          x = X), 
-                        inits = list(beta0 = 1, beta = rnorm(p, 0, 1),
+                        inits = list(beta01 = 1, beta1 = rnorm(p, 0, 1),
                                      beta02 = -1, beta2 = rnorm(p, 0, 1),
                                      alpha = 1, muTilde = rnorm(L, 0, 4), 
                                      tau2Tilde = rinvgamma(L, 10, 10),
                                      xi = rep(seq(1,30),4),
                                      v = rbeta(L-1, 1, 1),
-                                     gamma = rnorm(120, 0, 4))
-)
+                                     b = rnorm(120, 0, 4))
+                        )
 
-
-
+### COMPILING MODEL AND SETTING DATASET WITH THE SIMULATED DATASET IN FILE "Simulation.R"
 
 CsimModel <- compileNimble(simModel)
 
@@ -61,15 +81,14 @@ CsimModel$setData(list(y1 = simulatedY1s))
 
 CsimModel$setData(list(y2 = simulatedY2s))
 
-
-
+### DEFINING MONITORS FOR POSTERIOR ANALYSIS OF THE MCMC 
 
 xi_list <- sprintf("xi[%d]", 1:120)
 mu_list <- sprintf("mu[%d]", 1:120)
 w_list <- sprintf("w[%d]", 1:L)
 
 tau2_list <- sprintf("tau2[%d]", 1:120)
-gamma_list <- sprintf("gamma[%d]", 1:120)
+b_list <- sprintf("b[%d]", 1:120)
 
 prob_list <- c()
 prob2_list <- c()
@@ -78,110 +97,104 @@ for (i in 1:21) {
   prob2_list <- c(prob2_list, sprintf(sprintf("prob2[%%d, %d]", 1:21)[i], 1:120)) 
 }
 
-simMCMC <- buildMCMC(CsimModel, monitors = c(c("beta0", "beta02", 
-                                               "beta[1]", "beta[2]", "beta[3]",
+### BUILDING MCMC FOR FITTING DATASET WITH MONITORS
+
+simMCMC <- buildMCMC(CsimModel, monitors = c(c("beta01", "beta02", 
+                                               "beta1[1]", "beta1[2]", "beta1[3]",
                                                "beta2[1]", "beta2[2]", "beta2[3]",
                                                "alpha"),
-                                             xi_list, mu_list, w_list, tau2_list, gamma_list, prob_list, prob2_list))
+                                             xi_list, mu_list, w_list, tau2_list, b_list, prob_list, prob2_list))
 
+### COMPILING THE MCMC
 
 CsimMCMC <- compileNimble(simMCMC, project = simModel)
 
-
+### RUNNING MCMC AND SAVING THE RESULTING SAMPLES IN "samples1"
 
 samples1 <- runMCMC(CsimMCMC, niter = 13000, nburnin = 5000, thin = 50, summary = TRUE)
 
 
-par(mfrow=c(1,2))
-# 
-# plot(samples1$samples[ , 'beta0'], type = 'l', xlab = 'iteration',  ylab = expression(beta0))
-# plot(samples1$samples[ , 'beta[1]'], type = 'l', xlab = 'iteration', ylab = expression(beta1))
-# plot(samples1$samples[ , 'beta[2]'], type = 'l', xlab = 'iteration', ylab = expression(beta2))
-# plot(samples1$samples[ , 'beta[3]'], type = 'l', xlab = 'iteration', ylab = expression(beta3))
-# 
-# ##########
-# 
-# plot(samples1$samples[ , 'beta02'], type = 'l', xlab = 'iteration',  ylab = expression(beta02))
-# plot(samples1$samples[ , 'beta2[1]'], type = 'l', xlab = 'iteration', ylab = expression(beta21))
-# plot(samples1$samples[ , 'beta2[2]'], type = 'l', xlab = 'iteration', ylab = expression(beta22))
-# plot(samples1$samples[ , 'beta2[3]'], type = 'l', xlab = 'iteration', ylab = expression(beta23))
+###### PLOTS ######
+
+par(mfrow=c(2,4))
+
+plot(samples1$samples[ , 'beta01'], type = 'l', xlab = 'iteration',  ylab = expression(beta01))
+plot(samples1$samples[ , 'beta1[1]'], type = 'l', xlab = 'iteration', ylab = expression(beta11))
+plot(samples1$samples[ , 'beta1[2]'], type = 'l', xlab = 'iteration', ylab = expression(beta21))
+plot(samples1$samples[ , 'beta1[3]'], type = 'l', xlab = 'iteration', ylab = expression(beta31))
+
+##########
+
+plot(samples1$samples[ , 'beta02'], type = 'l', xlab = 'iteration',  ylab = expression(beta02))
+plot(samples1$samples[ , 'beta2[1]'], type = 'l', xlab = 'iteration', ylab = expression(beta12))
+plot(samples1$samples[ , 'beta2[2]'], type = 'l', xlab = 'iteration', ylab = expression(beta22))
+plot(samples1$samples[ , 'beta2[3]'], type = 'l', xlab = 'iteration', ylab = expression(beta32))
 
 n <- 120
-########################## GAMMA
+########################## b
 {
-  gamma_list <- c()
-  mu_gamma_list <- c()
-  tau2_gamma_list <- c()
+  b_list <- c()
+  mu_b_list <- c()
+  tau2_b_list <- c()
   for (i in 1:n) {
-    eq <- paste('gamma_list <- c(gamma_list, "gamma[',i,']")', sep = "")
+    eq <- paste('b_list <- c(b_list, "b[',i,']")', sep = "")
     eval(parse(text = eq))
-    eq <- paste('mu_gamma_list <- c(mu_gamma_list, "mu[',i,']")', sep = "")
+    eq <- paste('mu_b_list <- c(mu_b_list, "mu[',i,']")', sep = "")
     eval(parse(text = eq))
-    eq <- paste('tau2_gamma_list <- c(tau2_gamma_list, "tau2[',i,']")', sep = "")
+    eq <- paste('tau2_b_list <- c(tau2_b_list, "tau2[',i,']")', sep = "")
     eval(parse(text = eq))
   }
 }
 
-#par(mfcol=c(1, 1))
+par(mfcol=c(1, 5))
 
 ###############################################################################################
-{{# gamma
-  # gammaCols_23_chain1 <- samples1$samples[, gamma_list]
-  # gammaMn_23_chain1 <- colMeans(gammaCols_23_chain1)
-  # # gammaCols_23_chain2 <- data_samples_23$samples[, gamma_list]
-  # # gammaMn_23_chain2 <- colMeans(gammaCols_23_chain2)
-  # # gammaCols_23_chain3 <- data_samples_23$samples[, gamma_list]
-  # # gammaMn_23_chain3 <- colMeans(gammaCols_23_chain3)
-  # # gammaCols_23_chain4 <- data_samples_23$samples[, gamma_list]
-  # # gammaMn_23_chain4 <- colMeans(gammaCols_23_chain4)
-  # hist(gammaMn_23_chain1[1:30], xlab = 'posterior means 23', main = 'gamma', probability = FALSE, breaks = 100, col='blue', xlim = c(-6,6), ylim = c(0,30), density = 5, angle = 0, border = 'blue') 
-  # hist(gammaMn_23_chain1[31:60], col='red', xlim = c(-5,5), ylim = c(0,30), add = TRUE, breaks = 100, density = 5, angle = 30, border = 'red')
-  # hist(gammaMn_23_chain1[61:90], col='orange', xlim = c(-5,5), ylim = c(0,30), add = TRUE, breaks = 100, density = 5, angle = 60, border = 'orange')
-  # hist(gammaMn_23_chain1[91:120], col='green', xlim = c(-5,5), ylim = c(0,30), add = TRUE, breaks = 100, density = 5, angle = 60, border = 'green')
-  # 
+{{# b
+  bCols <- samples1$samples[, b_list]
+  bMn <- colMeans(bCols)
+  
+  hist(bMn[1:30], xlab = 'Posterior Means', main = 'b', probability = FALSE, breaks = 100, col='blue', 
+       xlim = c(-6,6), ylim = c(0,30), density = 5, angle = 0, border = 'blue')
+  hist(bMn[31:60], col='red', xlim = c(-5,5), ylim = c(0,30), add = TRUE, breaks = 100, density = 5, angle = 30, border = 'red')
+  hist(bMn[61:90], col='orange', xlim = c(-5,5), ylim = c(0,30), add = TRUE, breaks = 100, density = 5, angle = 60, border = 'orange')
+  hist(bMn[91:120], col='green', xlim = c(-5,5), ylim = c(0,30), add = TRUE, breaks = 100, density = 5, angle = 60, border = 'green')
+  
 }##############################################################################################
-  {# mu_gamma
-    mu_gammaCols_23_chain1 <- samples1$samples[, mu_gamma_list]
-    mu_gammaMn_23_chain1 <- colMeans(mu_gammaCols_23_chain1)
-    # mu_gammaCols_23_chain2 <- data_samples_23$samples[, mu_gamma_list]
-    # mu_gammaMn_23_chain2 <- colMeans(mu_gammaCols_23_chain2)
-    # mu_gammaCols_23_chain3 <- data_samples_23$samples[, mu_gamma_list]
-    # mu_gammaMn_23_chain3 <- colMeans(mu_gammaCols_23_chain3)
-    # mu_gammaCols_23_chain4 <- data_samples_23$samples[, mu_gamma_list]
-    # mu_gammaMn_23_chain4 <- colMeans(mu_gammaCols_23_chain4)
-    hist(mu_gammaMn_23_chain1[1:30], xlab = 'posterior means 23', main = 'mu_gamma', probability = FALSE, breaks = 20, col='blue', xlim = c(-4,4), ylim = c(0,30), density = 5, angle = 0, border = 'blue')
-    hist(mu_gammaMn_23_chain1[31:60], col='red', xlim = c(-5,5), ylim = c(0,30), add = TRUE, breaks = 20, density = 5, angle = 30, border = 'red')
-    hist(mu_gammaMn_23_chain1[61:90], col='orange', xlim = c(-5,5), ylim = c(0,30), add = TRUE, breaks = 20, density = 5, angle = 60, border = 'orange')
-    hist(mu_gammaMn_23_chain1[91:120], col='green', xlim = c(-5,5), ylim = c(0,30), add = TRUE, breaks = 20, density = 5, angle = 80, border = 'green')
+  {# mu_b
+    mu_bCols <- samples1$samples[, mu_b_list]
+    mu_bMn <- colMeans(mu_bCols)
+    
+    hist(mu_bMn[1:30], xlab = 'Posterior Means', main = 'mu_b', probability = FALSE, breaks = 20, col='blue', 
+         xlim = c(-4,4), ylim = c(0,30), density = 5, angle = 0, border = 'blue')
+    hist(mu_bMn[31:60], col='red', xlim = c(-5,5), ylim = c(0,30), add = TRUE, breaks = 20, density = 5, angle = 30, border = 'red')
+    hist(mu_bMn[61:90], col='orange', xlim = c(-5,5), ylim = c(0,30), add = TRUE, breaks = 20, density = 5, angle = 60, border = 'orange')
+    hist(mu_bMn[91:120], col='green', xlim = c(-5,5), ylim = c(0,30), add = TRUE, breaks = 20, density = 5, angle = 80, border = 'green')
     
   }##############################################################################################
-  {# tau2_gamma
-    tau2_gammaCols_23_chain1 <- samples1$samples[, tau2_gamma_list]
-    tau2_gammaMn_23_chain1 <- colMeans(tau2_gammaCols_23_chain1)
-    # tau2_gammaCols_23_chain2 <- data_samples_23$samples[, tau2_gamma_list]
-    # tau2_gammaMn_23_chain2 <- colMeans(tau2_gammaCols_23_chain2)
-    # tau2_gammaCols_23_chain3 <- data_samples_23$samples[, tau2_gamma_list]
-    # tau2_gammaMn_23_chain3 <- colMeans(tau2_gammaCols_23_chain3)
-    # tau2_gammaCols_23_chain4 <- data_samples_23$samples[, tau2_gamma_list]
-    # tau2_gammaMn_23_chain4 <- colMeans(tau2_gammaCols_23_chain4)
-    hist(tau2_gammaMn_23_chain1[1:30], xlab = 'posterior means 23', main = 'tau2_gamma', probability = FALSE, breaks = 100, col='blue', xlim = c(0,1), density = 5, angle = 0, border = 'blue')
-    hist(tau2_gammaMn_23_chain1[31:60], col='red', xlim = c(0,5), add = TRUE, breaks = 100, density = 5, angle = 30, border = 'red')
-    hist(tau2_gammaMn_23_chain1[61:90], col='orange', xlim = c(0,5), add = TRUE, breaks = 100, density = 5, angle = 60, border = 'orange')
-    hist(tau2_gammaMn_23_chain1[91:120], col='green', xlim = c(0,5), add = TRUE, breaks = 100, density = 5, angle = 60, border = 'green')
+  {# tau2_b
+    tau2_bCols <- samples1$samples[, tau2_b_list]
+    tau2_bMn <- colMeans(tau2_bCols)
+    
+    hist(tau2_bMn[1:30], xlab = 'Posterior Means', main = 'tau2_b', probability = FALSE, breaks = 100, col='blue', 
+         xlim = c(0,1), density = 5, angle = 0, border = 'blue')
+    hist(tau2_bMn[31:60], col='red', xlim = c(0,5), add = TRUE, breaks = 100, density = 5, angle = 30, border = 'red')
+    hist(tau2_bMn[61:90], col='orange', xlim = c(0,5), add = TRUE, breaks = 100, density = 5, angle = 60, border = 'orange')
+    hist(tau2_bMn[91:120], col='green', xlim = c(0,5), add = TRUE, breaks = 100, density = 5, angle = 60, border = 'green')
 
   }##############################################################################################
-  # hist(B[1:30], xlab = 'posterior means 23', main = 'B', probability = FALSE, breaks = 100, col='blue', xlim = c(-6,6), ylim = c(0,30), density = 5, angle = 0, border = 'blue') 
-  # hist(B[31:60], col='red', xlim = c(-5,5), ylim = c(0,30), add = TRUE, breaks = 100, density = 5, angle = 30, border = 'red')
-  # hist(B[61:90], col='orange', xlim = c(-5,5), ylim = c(0,30), add = TRUE, breaks = 100, density = 5, angle = 60, border = 'orange')
-  # hist(B[91:120], col='green', xlim = c(-5,5), ylim = c(0,30), add = TRUE, breaks = 100, density = 5, angle = 60, border = 'green')
-  # 
-  # hist(samples1$samples[, "alpha"])
+  hist(B[1:30], xlab = 'Posterior Means', main = 'B', probability = FALSE, breaks = 100, col='blue', 
+       xlim = c(-6,6), ylim = c(0,30), density = 5, angle = 0, border = 'blue')
+  hist(B[31:60], col='red', xlim = c(-5,5), ylim = c(0,30), add = TRUE, breaks = 100, density = 5, angle = 30, border = 'red')
+  hist(B[61:90], col='orange', xlim = c(-5,5), ylim = c(0,30), add = TRUE, breaks = 100, density = 5, angle = 60, border = 'orange')
+  hist(B[91:120], col='green', xlim = c(-5,5), ylim = c(0,30), add = TRUE, breaks = 100, density = 5, angle = 60, border = 'green')
+
+  hist(samples1$samples[, "alpha"], main = 'Alpha Parameter')
 }
 
-samples1$summary['beta0',]
-samples1$summary['beta[1]',]
-samples1$summary['beta[2]',]
-samples1$summary['beta[3]',]
+samples1$summary['beta01',]
+samples1$summary['beta1[1]',]
+samples1$summary['beta1[2]',]
+samples1$summary['beta1[3]',]
 
 samples1$summary['beta02',]
 samples1$summary['beta2[1]',]
@@ -279,7 +292,7 @@ prob2_list_sample <- sumY2s/21
 
 par(mfrow=c(2,4))
 
-plot(samples2$samples[ , 'prob[71]'], type = 'l', xlab = 'iteration',  ylab = expression(beta0))
+plot(samples2$samples[ , 'prob[71]'], type = 'l', xlab = 'iteration',  ylab = expression(beta01))
 abline(h = prob_list_sample[71], col = "blue") 
 plot(samples2$samples[ , 'prob[72]'], type = 'l', xlab = 'iteration', ylab = expression(beta1))
 abline(h = prob_list_sample[72], col = "blue") 
@@ -301,7 +314,7 @@ abline(h = prob_list_sample[78], col = "blue")
 
 par(mfrow=c(2,4))
 
-plot(samples2$samples[ , 'prob2[71]'], type = 'l', xlab = 'iteration',  ylab = expression(beta0))
+plot(samples2$samples[ , 'prob2[71]'], type = 'l', xlab = 'iteration',  ylab = expression(beta01))
 abline(h = prob2_list_sample[71], col = "blue") 
 plot(samples2$samples[ , 'prob2[72]'], type = 'l', xlab = 'iteration', ylab = expression(beta1))
 abline(h = prob2_list_sample[72], col = "blue") 

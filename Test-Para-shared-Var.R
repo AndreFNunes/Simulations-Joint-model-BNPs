@@ -1,13 +1,19 @@
+####################################
+###### START OF MODEL FITTING ######
+
+library(nimble, warn.conflicts = FALSE)
+library(dplyr, warn.conflicts = FALSE)
+
 ##################################################################################
-################
-#                TESTE 0 REFERÊNCIA SEM BNP's
-################
+###########
+#           TESTE 0 REFERÊNCIA SEM BNP's
+###########
 ##################################################################################
 
 simCode <- nimbleCode({
   for (i in 1:nsite) {
     for (j in 1:nvisit) {
-      logit(prob[i,j]) <- beta0 + inprod(beta[1:p], x[i, 1:p]) + b[i] # True occupancy status
+      logit(prob[i,j]) <- beta01 + inprod(beta1[1:p], x[i, 1:p]) + b[i] # True occupancy status
       logit(prob2[i,j]) <- beta02 + inprod(beta2[1:p], x[i, 1:p]) + b[i] # True occupancy status
       
       y1[i,j] ~ dbern(prob[i,j]) # Observed data
@@ -19,24 +25,33 @@ simCode <- nimbleCode({
   
   tau2_b ~ dgamma(0.1,0.2)
   
-  beta0 ~ dnorm(0, sd = 50)
+  beta01 ~ dnorm(0, sd = 50)
   beta02 ~ dnorm(0, sd = 50)
   for(k in 1:p) {
-    beta[k] ~ dnorm(0, sd = 50)
+    beta1[k] ~ dnorm(0, sd = 50)
     beta2[k] ~ dnorm(0, sd = 50)
   }
   
 })
 
+### NUMBER OF COVARIATES
+
 p <- 3
+
+###### BUILDING MODEL FOR DATA FITTING ######
+###
+### "npatients" = number of patients; "nvisit" = number of longitudinal measures
+### "b" = shared random effect; "x" = Covariate matrix
 
 simModel <- nimbleModel(code = simCode,
                         constants = list(nsite = 120, nvisit = 21, p = p, 
                                          x = X), 
-                        inits = list(beta0 = 1, beta = rnorm(p, 0, 1),
+                        inits = list(beta01 = 1, beta1 = rnorm(p, 0, 1),
                                      beta02 = -1, beta2 = rnorm(p, 0, 1),
                                      b = rnorm(120, 0, 2), tau2_b = 1)
-)
+                        )
+
+### COMPILING MODEL AND SETTING DATASET WITH THE SIMULATED DATASET IN FILE "Simulation.R"
 
 CsimModel <- compileNimble(simModel)
 
@@ -44,8 +59,9 @@ CsimModel$setData(list(y1 = simulatedY1s))
 
 CsimModel$setData(list(y2 = simulatedY2s))
 
+### DEFINING MONITORS FOR POSTERIOR ANALYSIS OF THE MCMC 
 
-gamma_list <- sprintf("b[%d]", 1:120)
+b_list <- sprintf("b[%d]", 1:120)
 prob_list <- c()
 prob2_list <- c()
 for (i in 1:21) {
@@ -53,42 +69,45 @@ for (i in 1:21) {
   prob2_list <- c(prob2_list, sprintf(sprintf("prob2[%%d, %d]", 1:21)[i], 1:120)) 
 }
 
-simMCMC <- buildMCMC(CsimModel, monitors = c(c("beta0", "beta02", 
-                                               "beta[1]", "beta[2]", "beta[3]",
-                                               "beta2[1]", "beta2[2]", "beta2[3]", "tau2_b"),
-                                             gamma_list, prob_list, prob2_list))
+### BUILDING MCMC FOR FITTING DATASET WITH MONITORS
 
-simMCMC$monitors
+simMCMC <- buildMCMC(CsimModel, monitors = c(c("beta01", "beta02", 
+                                               "beta1[1]", "beta1[2]", "beta1[3]",
+                                               "beta2[1]", "beta2[2]", "beta2[3]", "tau2_b"),
+                                             b_list, prob_list, prob2_list))
+
+### COMPILING THE MCMC
 
 CsimMCMC <- compileNimble(simMCMC, project = simModel)
 
-
+### RUNNING MCMC AND SAVING THE RESULTING SAMPLES IN "samples"
 
 samples <- runMCMC(CsimMCMC, niter = 13000, nburnin = 5000, thin = 50, summary = TRUE)
 
-par(mfrow=c(1,2))
-# 
-# plot(samples$samples[ , 'beta0'], type = 'l', xlab = 'iteration',  ylab = expression(beta0))
-# plot(samples$samples[ , 'beta[1]'], type = 'l', xlab = 'iteration', ylab = expression(beta1))
-# plot(samples$samples[ , 'beta[2]'], type = 'l', xlab = 'iteration', ylab = expression(beta2))
-# plot(samples$samples[ , 'beta[3]'], type = 'l', xlab = 'iteration', ylab = expression(beta3))
 
+###### PLOTS ######
 
+par(mfrow=c(2,4))
+
+plot(samples$samples[ , 'beta01'], type = 'l', xlab = 'iteration',  ylab = expression(beta01))
+plot(samples$samples[ , 'beta1[1]'], type = 'l', xlab = 'iteration', ylab = expression(beta1))
+plot(samples$samples[ , 'beta1[2]'], type = 'l', xlab = 'iteration', ylab = expression(beta2))
+plot(samples$samples[ , 'beta1[3]'], type = 'l', xlab = 'iteration', ylab = expression(beta3))
 ##########
-# 
-# plot(samples$samples[ , 'beta02'], type = 'l', xlab = 'iteration',  ylab = expression(beta02))
-# plot(samples$samples[ , 'beta2[1]'], type = 'l', xlab = 'iteration', ylab = expression(beta21))
-# plot(samples$samples[ , 'beta2[2]'], type = 'l', xlab = 'iteration', ylab = expression(beta22))
-# plot(samples$samples[ , 'beta2[3]'], type = 'l', xlab = 'iteration', ylab = expression(beta23))
+plot(samples$samples[ , 'beta02'], type = 'l', xlab = 'iteration',  ylab = expression(beta02))
+plot(samples$samples[ , 'beta2[1]'], type = 'l', xlab = 'iteration', ylab = expression(beta21))
+plot(samples$samples[ , 'beta2[2]'], type = 'l', xlab = 'iteration', ylab = expression(beta22))
+plot(samples$samples[ , 'beta2[3]'], type = 'l', xlab = 'iteration', ylab = expression(beta23))
 
+par(mfrow=c(1,2))
 
-mu_gammaCols_23_chain1 <- samples$samples[, gamma_list]
-mu_gammaMn_23_chain1 <- colMeans(mu_gammaCols_23_chain1)
-hist(mu_gammaMn_23_chain1[1:30], xlab = 'posterior means 23', main = 'mu_gamma', probability = FALSE, breaks = 20, col='blue', xlim = c(-4,4), ylim = c(0,15), density = 5, angle = 0, border = 'blue')
-hist(mu_gammaMn_23_chain1[31:60], col='red', xlim = c(-5,5), ylim = c(0,30), add = TRUE, breaks = 20, density = 5, angle = 30, border = 'red')
-hist(mu_gammaMn_23_chain1[61:90], col='orange', xlim = c(-5,5), ylim = c(0,30), add = TRUE, breaks = 20, density = 5, angle = 60, border = 'orange')
-hist(mu_gammaMn_23_chain1[91:120], col='green', xlim = c(-5,5), ylim = c(0,30), add = TRUE, breaks = 20, density = 5, angle = 80, border = 'green')
+bCols <- samples$samples[, b_list]
+bMn <- colMeans(bCols)
 
+hist(bMn[1:30], xlab = 'posterior means 23', main = 'mu_gamma', probability = FALSE, breaks = 20, col='blue', xlim = c(-4,4), ylim = c(0,15), density = 5, angle = 0, border = 'blue')
+hist(bMn[31:60], col='red', xlim = c(-5,5), ylim = c(0,30), add = TRUE, breaks = 20, density = 5, angle = 30, border = 'red')
+hist(bMn[61:90], col='orange', xlim = c(-5,5), ylim = c(0,30), add = TRUE, breaks = 20, density = 5, angle = 60, border = 'orange')
+hist(bMn[91:120], col='green', xlim = c(-5,5), ylim = c(0,30), add = TRUE, breaks = 20, density = 5, angle = 80, border = 'green')
 
 plot(samples$samples[ , 'tau2_b'], type = 'l', xlab = 'iteration', ylab = expression(tau2_b))
 
